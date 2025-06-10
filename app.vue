@@ -1,3 +1,4 @@
+<!-- app.vue -->
 <template>
   <div 
     :class="[
@@ -69,7 +70,7 @@
     <!-- Connection Status Indicator -->
     <Transition name="slide-up">
       <div 
-        v-if="mainStore.connectionStatus !== 'connected'"
+        v-if="showConnectionStatus"
         class="fixed bottom-4 left-4 px-4 py-2 rounded-lg bg-dark-200/90 backdrop-blur-sm border border-neon-yellow/50"
       >
         <div class="flex items-center space-x-2">
@@ -80,7 +81,7 @@
                }">
           </div>
           <span class="text-xs uppercase tracking-wider">
-            {{ mainStore.connectionStatus === 'syncing' ? 'Syncing...' : 'Offline' }}
+            {{ connectionStatusText }}
           </span>
         </div>
       </div>
@@ -88,121 +89,196 @@
   </div>
 </template>
 
-<script setup>
-import { useMainStore } from '~/stores/main'
-import { CheckCircleIcon, ExclamationTriangleIcon, InformationCircleIcon, XCircleIcon } from '@heroicons/vue/24/outline'
+<script setup lang="ts">
+import {
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  InformationCircleIcon,
+  XCircleIcon
+} from '@heroicons/vue/24/outline'
 
 const mainStore = useMainStore()
-const toasts = ref([])
-const showMatrixEffect = ref(false)
 
 // Toast system
-const showToast = (type, title, message) => {
-  const id = Date.now()
-  toasts.value.push({ id, type, title, message })
+const toasts = ref<any[]>([])
+let toastId = 0
+
+const addToast = (type: string, title: string, message: string) => {
+  const toast = {
+    id: ++toastId,
+    type,
+    title,
+    message
+  }
+  
+  toasts.value.push(toast)
+  
   setTimeout(() => {
-    toasts.value = toasts.value.filter(t => t.id !== id)
+    const index = toasts.value.findIndex(t => t.id === toast.id)
+    if (index > -1) {
+      toasts.value.splice(index, 1)
+    }
   }, 5000)
 }
 
-const getToastClass = (type) => {
+// Provide toast function globally
+provide('toast', addToast)
+
+const getToastClass = (type: string) => {
   const classes = {
-    success: 'bg-green-500/10 border-green-500/50 text-green-500',
-    error: 'bg-red-500/10 border-red-500/50 text-red-500',
-    warning: 'bg-yellow-500/10 border-yellow-500/50 text-yellow-500',
-    info: 'bg-blue-500/10 border-blue-500/50 text-blue-500'
+    success: 'bg-green-500/20 border-green-500/50 text-green-100',
+    error: 'bg-red-500/20 border-red-500/50 text-red-100',
+    warning: 'bg-yellow-500/20 border-yellow-500/50 text-yellow-100',
+    info: 'bg-blue-500/20 border-blue-500/50 text-blue-100'
   }
   return classes[type] || classes.info
 }
 
-const getToastIcon = (type) => {
+const getToastIcon = (type: string) => {
   const icons = {
     success: CheckCircleIcon,
     error: XCircleIcon,
     warning: ExclamationTriangleIcon,
     info: InformationCircleIcon
   }
-  return icons[type] || icons.info
+  return icons[type] || InformationCircleIcon
 }
 
-// Matrix effect character generator
+// Matrix effect
+const showMatrixEffect = computed(() => {
+  return mainStore.chatSettings.theme === 'cyber' && process.client
+})
+
 const randomMatrixChar = () => {
-  const chars = '01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン'
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン'
   return chars[Math.floor(Math.random() * chars.length)]
 }
 
-// Expose toast system globally
-provide('toast', showToast)
+// Connection status
+const showConnectionStatus = computed(() => {
+  return mainStore.user && mainStore.connectionStatus !== 'connected'
+})
 
-// Theme management
+const connectionStatusText = computed(() => {
+  switch (mainStore.connectionStatus) {
+    case 'syncing': return 'Syncing...'
+    case 'disconnected': return 'Offline'
+    case 'connecting': return 'Connecting...'
+    default: return 'Connected'
+  }
+})
+
+// Apply theme on mount
 onMounted(() => {
-  // Apply theme
-  document.documentElement.classList.add(`theme-${mainStore.chatSettings.theme}`)
-  
-  // Enable matrix effect based on theme
-  showMatrixEffect.value = mainStore.chatSettings.theme === 'cyberpunk' || 
-                          mainStore.chatSettings.theme === 'matrix'
-  
-  // Initialize stores
-  mainStore.initialize()
+  if (process.client) {
+    document.documentElement.className = `theme-${mainStore.chatSettings.theme}`
+  }
 })
 
 // Watch for theme changes
-watch(() => mainStore.chatSettings.theme, (newTheme, oldTheme) => {
-  document.documentElement.classList.remove(`theme-${oldTheme}`)
-  document.documentElement.classList.add(`theme-${newTheme}`)
-  showMatrixEffect.value = newTheme === 'cyberpunk' || newTheme === 'matrix'
+watch(() => mainStore.chatSettings.theme, (newTheme) => {
+  if (process.client) {
+    document.documentElement.className = `theme-${newTheme}`
+  }
 })
+
+// Error handling
+const handleError = (error: any) => {
+  console.error('App error:', error)
+  addToast('error', 'Error', error.message || 'An unexpected error occurred')
+}
+
+// Global error handler
+if (process.client) {
+  window.addEventListener('error', (event) => {
+    handleError(event.error)
+  })
+  
+  window.addEventListener('unhandledrejection', (event) => {
+    handleError(event.reason)
+    event.preventDefault()
+  })
+}
 
 // SEO
 useHead({
-  title: 'CyberChat - Next-Gen AI Chat',
+  titleTemplate: '%s - CyberChat',
+  htmlAttrs: {
+    lang: 'en'
+  },
   meta: [
-    { name: 'description', content: 'Advanced AI chatbot with multiple models, reasoning, and web search capabilities' },
-    { name: 'theme-color', content: '#39ff14' },
-    { name: 'apple-mobile-web-app-capable', content: 'yes' },
-    { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' }
-  ],
-  link: [
-    { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
-    { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' }
+    { name: 'robots', content: 'index, follow' },
+    { name: 'author', content: 'CyberChat' },
+    { property: 'og:type', content: 'website' },
+    { property: 'og:site_name', content: 'CyberChat' }
   ]
 })
 </script>
 
-<style scoped>
-/* Loading Spinner */
+<style>
+/* Matrix background animation */
+.matrix-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: -1;
+  opacity: 0.1;
+}
+
+.matrix-char {
+  position: absolute;
+  color: #39ff14;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: bold;
+  animation: matrix-fall 20s linear infinite;
+}
+
+@keyframes matrix-fall {
+  to {
+    transform: translateY(100vh);
+  }
+}
+
+/* Theme variables */
+.theme-cyber {
+  --primary-color: #39ff14;
+  --secondary-color: #00d4ff;
+}
+
+.theme-dark {
+  --primary-color: #6b7280;
+  --secondary-color: #9ca3af;
+}
+
+.theme-blue {
+  --primary-color: #00d4ff;
+  --secondary-color: #0ea5e9;
+}
+
+.theme-purple {
+  --primary-color: #bf00ff;
+  --secondary-color: #a855f7;
+}
+
+/* Loading spinner */
 .loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(57, 255, 20, 0.3);
-  border-top: 3px solid #39ff14;
+  width: 2rem;
+  height: 2rem;
+  border: 3px solid rgba(255, 255, 255, 0.3);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  border-top-color: #39ff14;
+  animation: spin 1s ease-in-out infinite;
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  to { transform: rotate(360deg); }
 }
 
-/* Toast Transitions */
-.toast-enter-active,
-.toast-leave-active {
-  transition: all 0.3s ease;
-}
-
-.toast-enter-from {
-  opacity: 0;
-  transform: translateX(100%);
-}
-
-.toast-leave-to {
-  opacity: 0;
-  transform: translateX(100%);
-}
-
-/* Fade Transition */
+/* Transitions */
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s ease;
@@ -213,66 +289,37 @@ useHead({
   opacity: 0;
 }
 
-/* Slide Up Transition */
 .slide-up-enter-active,
 .slide-up-leave-active {
   transition: all 0.3s ease;
 }
 
-.slide-up-enter-from,
-.slide-up-leave-to {
-  opacity: 0;
+.slide-up-enter-from {
   transform: translateY(100%);
+  opacity: 0;
 }
 
-/* Theme-specific styles */
-.theme-cyberpunk {
-  --primary-color: #39ff14;
-  --secondary-color: #00d4ff;
-  --accent-color: #bf00ff;
-  --bg-primary: #0a0a0a;
-  --bg-secondary: #1a1a1a;
-  --text-primary: #ffffff;
-  --text-secondary: #cccccc;
+.slide-up-leave-to {
+  transform: translateY(100%);
+  opacity: 0;
 }
 
-.theme-neon {
-  --primary-color: #ff073a;
-  --secondary-color: #39ff14;
-  --accent-color: #00d4ff;
-  --bg-primary: #0a0a0a;
-  --bg-secondary: #1a1a1a;
-  --text-primary: #ffffff;
-  --text-secondary: #cccccc;
+.toast-enter-active,
+.toast-leave-active {
+  transition: all 0.3s ease;
 }
 
-.theme-matrix {
-  --primary-color: #39ff14;
-  --secondary-color: #003300;
-  --accent-color: #001100;
-  --bg-primary: #000000;
-  --bg-secondary: #111111;
-  --text-primary: #39ff14;
-  --text-secondary: #227722;
+.toast-enter-from {
+  transform: translateX(100%);
+  opacity: 0;
 }
 
-.theme-synthwave {
-  --primary-color: #ff00ff;
-  --secondary-color: #00ffff;
-  --accent-color: #ffff00;
-  --bg-primary: #1a0a1a;
-  --bg-secondary: #2a1a2a;
-  --text-primary: #ffffff;
-  --text-secondary: #ffccff;
+.toast-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
 }
 
-.theme-terminal {
-  --primary-color: #00ff00;
-  --secondary-color: #ffffff;
-  --accent-color: #ffff00;
-  --bg-primary: #000000;
-  --bg-secondary: #111111;
-  --text-primary: #00ff00;
-  --text-secondary: #ccffcc;
+.toast-move {
+  transition: transform 0.3s ease;
 }
 </style>

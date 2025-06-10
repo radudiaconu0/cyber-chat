@@ -1,317 +1,379 @@
+<!-- pages/share/[id].vue -->
 <template>
   <div class="min-h-screen bg-cyber-dark">
-    <!-- Header -->
-    <header class="bg-dark-100 border-b border-dark-300/50 px-6 py-4">
-      <div class="max-w-4xl mx-auto flex items-center justify-between">
-        <div class="flex items-center space-x-3">
-          <div class="w-10 h-10 bg-gradient-to-br from-neon-green to-neon-blue rounded-lg flex items-center justify-center">
-            <ChatBubbleBottomCenterTextIcon class="w-6 h-6 text-black" />
-          </div>
-          <div>
-            <h1 class="text-xl font-bold text-white">{{ chatTitle || 'Shared Chat' }}</h1>
-            <p class="text-gray-400 text-sm">View-only mode</p>
-          </div>
-        </div>
-        
-        <div class="flex items-center space-x-3">
-          <span class="px-3 py-1 bg-purple-500/20 text-purple-400 rounded-full text-xs font-medium">
-            Shared
-          </span>
-          <button
-            @click="copyShareLink"
-            class="cyber-button text-sm"
-          >
-            <LinkIcon class="w-4 h-4 inline mr-2" />
-            Copy Link
-          </button>
-        </div>
-      </div>
-    </header>
-
     <!-- Loading State -->
-    <div v-if="loading" class="flex items-center justify-center h-96">
+    <div v-if="pending" class="flex items-center justify-center min-h-screen">
       <div class="text-center">
         <div class="loading-spinner mx-auto mb-4"></div>
-        <p class="text-gray-400">Loading shared chat...</p>
+        <p class="text-neon-green text-sm uppercase tracking-wider">Loading Shared Chat...</p>
       </div>
     </div>
 
-    <!-- Password Prompt -->
-    <div v-else-if="requiresPassword && !authenticated" class="flex items-center justify-center h-96">
-      <div class="w-full max-w-md">
-        <div class="bg-dark-100 rounded-xl border border-dark-300/50 p-8">
-          <div class="text-center mb-6">
-            <LockClosedIcon class="w-12 h-12 text-neon-purple mx-auto mb-3" />
-            <h2 class="text-xl font-bold text-white">Password Required</h2>
-            <p class="text-gray-400 text-sm mt-2">This chat is password protected</p>
+    <!-- Password Protection -->
+    <div v-else-if="requiresPassword && !authenticated" class="flex items-center justify-center min-h-screen p-4">
+      <div class="bg-dark-200 border border-dark-300 rounded-lg p-8 w-full max-w-md">
+        <div class="text-center mb-6">
+          <div class="w-16 h-16 bg-gradient-to-br from-neon-green to-neon-blue rounded-full mx-auto mb-4 flex items-center justify-center">
+            <LockClosedIcon class="w-8 h-8 text-black" />
+          </div>
+          <h1 class="text-2xl font-bold text-white mb-2">Protected Chat</h1>
+          <p class="text-gray-400">This shared chat is password protected</p>
+        </div>
+
+        <form @submit.prevent="submitPassword" class="space-y-4">
+          <div>
+            <input
+              v-model="password"
+              type="password"
+              placeholder="Enter password"
+              class="w-full px-4 py-3 bg-dark-300 border border-dark-400 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-neon-green/50"
+              :class="{ 'border-red-500': passwordError }"
+            />
+            <p v-if="passwordError" class="text-red-400 text-sm mt-2">{{ passwordError }}</p>
           </div>
           
-          <form @submit.prevent="verifyPassword" class="space-y-4">
-            <div>
-              <input
-                v-model="password"
-                type="password"
-                placeholder="Enter password"
-                class="w-full px-4 py-3 bg-dark-200 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-neon-green/50"
-                autofocus
-              />
-              <p v-if="passwordError" class="text-red-500 text-sm mt-2">
-                {{ passwordError }}
-              </p>
-            </div>
-            
-            <button
-              type="submit"
-              :disabled="!password"
-              :class="[
-                'w-full py-3 rounded-lg font-medium transition-all',
-                password 
-                  ? 'bg-neon-purple text-white hover:bg-neon-purple/80' 
-                  : 'bg-dark-300 text-gray-500 cursor-not-allowed'
-              ]"
-            >
-              View Chat
-            </button>
-          </form>
-        </div>
+          <button
+            type="submit"
+            :disabled="!password || isValidating"
+            class="w-full cyber-button disabled:opacity-50"
+          >
+            {{ isValidating ? 'Validating...' : 'Access Chat' }}
+          </button>
+        </form>
       </div>
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error" class="flex items-center justify-center h-96">
-      <div class="text-center">
-        <ExclamationCircleIcon class="w-12 h-12 text-red-500 mx-auto mb-3" />
-        <h2 class="text-xl font-bold text-white mb-2">{{ error.title }}</h2>
-        <p class="text-gray-400">{{ error.message }}</p>
-        <NuxtLink to="/" class="cyber-button text-sm mt-4 inline-block">
-          Go to Home
-        </NuxtLink>
+    <div v-else-if="error" class="flex items-center justify-center min-h-screen p-4">
+      <div class="text-center max-w-md">
+        <div class="w-16 h-16 bg-red-500/20 rounded-full mx-auto mb-4 flex items-center justify-center">
+          <ExclamationTriangleIcon class="w-8 h-8 text-red-500" />
+        </div>
+        <h1 class="text-2xl font-bold text-red-500 mb-4">{{ error.statusMessage || 'Chat Not Found' }}</h1>
+        <p class="text-gray-400 mb-6">
+          This shared chat may have expired, been deleted, or the link is invalid.
+        </p>
+        <a href="/" class="cyber-button inline-block">
+          Go to CyberChat
+        </a>
       </div>
     </div>
 
-    <!-- Chat Content -->
-    <div v-else class="max-w-4xl mx-auto px-6 py-8">
-      <!-- Expiration Warning -->
-      <div v-if="expiresAt" class="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/50 rounded-lg">
-        <div class="flex items-center space-x-3">
-          <ClockIcon class="w-5 h-5 text-yellow-500" />
-          <p class="text-yellow-500 text-sm">
-            This shared chat expires {{ formatExpiration(expiresAt) }}
-          </p>
+    <!-- Shared Chat Display -->
+    <div v-else-if="sharedChat" class="flex flex-col min-h-screen">
+      <!-- Header -->
+      <header class="bg-dark-100 border-b border-dark-300/50 p-4">
+        <div class="max-w-4xl mx-auto flex items-center justify-between">
+          <div>
+            <h1 class="text-xl font-bold text-white">{{ sharedChat.title }}</h1>
+            <div class="flex items-center space-x-4 text-sm text-gray-400 mt-1">
+              <span>{{ messages.length }} messages</span>
+              <span>Shared {{ formatDate(new Date(sharedChat.created_at)) }}</span>
+              <span>{{ sharedChat.view_count }} views</span>
+            </div>
+          </div>
+          
+          <div class="flex items-center space-x-2">
+            <!-- Download Button -->
+            <button
+              v-if="sharedChat.metadata?.allowDownload"
+              @click="downloadChat"
+              class="p-2 text-gray-400 hover:text-white transition-colors"
+              title="Download Chat"
+            >
+              <ArrowDownTrayIcon class="w-5 h-5" />
+            </button>
+            
+            <!-- CyberChat Link -->
+            <a 
+              href="/"
+              class="px-4 py-2 bg-neon-green text-black rounded-lg hover:bg-neon-green/80 transition-colors text-sm font-medium"
+            >
+              Try CyberChat
+            </a>
+          </div>
         </div>
-      </div>
+      </header>
 
       <!-- Messages -->
-      <div class="space-y-6">
-        <div
-          v-for="message in messages"
-          :key="message.id"
-          :class="[
-            'message-bubble',
-            message.role
-          ]"
-        >
-          <!-- Message Header -->
-          <div class="flex items-center justify-between mb-2">
-            <div class="flex items-center space-x-2">
-              <div 
-                v-if="message.role === 'user'"
-                class="w-6 h-6 bg-gradient-to-br from-neon-green to-neon-blue rounded-full flex items-center justify-center"
-              >
-                <UserIcon class="w-4 h-4 text-black" />
+      <main class="flex-1 overflow-y-auto px-4 py-6">
+        <div class="max-w-4xl mx-auto space-y-6">
+          <div
+            v-for="message in messages"
+            :key="message.id"
+            :class="[
+              'message-bubble',
+              message.role,
+              'border rounded-lg p-4'
+            ]"
+          >
+            <!-- Message Header -->
+            <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center space-x-2">
+                <div 
+                  :class="[
+                    'w-6 h-6 rounded-full flex items-center justify-center',
+                    message.role === 'user'
+                      ? 'bg-gradient-to-br from-neon-green to-neon-blue'
+                      : 'bg-gradient-to-br from-neon-purple to-neon-pink'
+                  ]"
+                >
+                  <UserIcon v-if="message.role === 'user'" class="w-4 h-4 text-black" />
+                  <CpuChipIcon v-else class="w-4 h-4 text-white" />
+                </div>
+                <span class="text-xs text-gray-400">
+                  {{ message.role === 'user' ? 'User' : 'Assistant' }}
+                </span>
               </div>
-              <div 
-                v-else
-                class="w-6 h-6 bg-gradient-to-br from-neon-purple to-neon-pink rounded-full flex items-center justify-center"
+              
+              <!-- Timestamp -->
+              <span 
+                v-if="sharedChat.metadata?.showMetadata"
+                class="text-xs text-gray-500"
               >
-                <CpuChipIcon class="w-4 h-4 text-white" />
-              </div>
-              <span class="text-xs text-gray-400">
-                {{ message.role === 'user' ? 'User' : 'Assistant' }}
+                {{ formatTimestamp(new Date(message.timestamp)) }}
               </span>
             </div>
-            <span class="text-xs text-gray-500">
-              {{ formatTime(message.timestamp) }}
-            </span>
-          </div>
 
-          <!-- Message Content -->
-          <div class="pl-8">
-            <MarkdownRenderer :content="message.content" />
+            <!-- Message Content -->
+            <div 
+              class="prose prose-invert max-w-none"
+              v-html="renderMarkdown(message.content)"
+            />
+
+            <!-- Attachments -->
+            <div v-if="message.attachments && message.attachments.length > 0" class="mt-3">
+              <div class="flex flex-wrap gap-2">
+                <div
+                  v-for="attachment in message.attachments"
+                  :key="attachment.id"
+                  class="bg-dark-300/50 border border-dark-400 rounded-lg p-2 flex items-center space-x-2"
+                >
+                  <DocumentIcon class="w-4 h-4 text-neon-blue" />
+                  <span class="text-sm text-gray-300">{{ attachment.name }}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      </main>
 
       <!-- Footer -->
-      <div class="mt-12 pt-8 border-t border-dark-300/50 text-center">
-        <p class="text-gray-400 text-sm mb-4">
-          Want to have your own AI conversations?
-        </p>
-        <NuxtLink to="/" class="cyber-button">
-          Try CyberChat
-        </NuxtLink>
-      </div>
+      <footer class="bg-dark-100 border-t border-dark-300/50 p-4">
+        <div class="max-w-4xl mx-auto text-center text-sm text-gray-400">
+          <p>
+            This chat was shared using 
+            <a href="/" class="text-neon-green hover:text-neon-green/80">CyberChat</a>
+            - Next-generation AI conversations
+          </p>
+        </div>
+      </footer>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { 
-  ChatBubbleBottomCenterTextIcon,
-  LinkIcon,
+import {
   LockClosedIcon,
-  ExclamationCircleIcon,
-  ClockIcon,
+  ExclamationTriangleIcon,
+  ArrowDownTrayIcon,
   UserIcon,
-  CpuChipIcon
+  CpuChipIcon,
+  DocumentIcon
 } from '@heroicons/vue/24/outline'
+import { marked } from 'marked'
+
+definePageMeta({
+  layout: false
+})
 
 const route = useRoute()
-const toast = inject('toast')
+const supabase = await useSupabaseClient()
 
-// State
-const loading = ref(true)
-const requiresPassword = ref(false)
-const authenticated = ref(false)
+const shareId = route.params.id as string
 const password = ref('')
 const passwordError = ref('')
-const error = ref<{ title: string; message: string } | null>(null)
+const isValidating = ref(false)
+const requiresPassword = ref(false)
+const authenticated = ref(false)
 
-const chatTitle = ref('')
-const messages = ref<any[]>([])
-const expiresAt = ref<Date | null>(null)
+// Load shared chat data
+const { data: sharedChat, pending, error } = await useLazyAsyncData(
+  `shared-chat-${shareId}`,
+  async () => {
+    try {
+      // First, get the shared chat metadata
+      const { data: shareData, error: shareError } = await supabase
+        .from('shared_chats')
+        .select('*')
+        .eq('id', shareId)
+        .single()
 
-// Load shared chat
-const loadSharedChat = async () => {
-  loading.value = true
-  
+      if (shareError || !shareData) {
+        throw createError({
+          statusCode: 404,
+          statusMessage: 'Shared chat not found'
+        })
+      }
+
+      // Check if expired
+      if (shareData.expires_at && new Date(shareData.expires_at) < new Date()) {
+        throw createError({
+          statusCode: 410,
+          statusMessage: 'This shared chat has expired'
+        })
+      }
+
+      // Check if password required
+      if (shareData.password_hash) {
+        requiresPassword.value = true
+        if (!authenticated.value) {
+          return shareData
+        }
+      }
+
+      // Increment view count
+      await supabase
+        .from('shared_chats')
+        .update({ 
+          view_count: (shareData.view_count || 0) + 1,
+          last_viewed_at: new Date().toISOString()
+        })
+        .eq('id', shareId)
+
+      return shareData
+    } catch (error: any) {
+      throw error
+    }
+  }
+)
+
+// Load messages for the shared chat
+const { data: messages } = await useLazyAsyncData(
+  `shared-chat-messages-${shareId}`,
+  async () => {
+    if (!sharedChat.value || (requiresPassword.value && !authenticated.value)) {
+      return []
+    }
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('session_id', sharedChat.value.session_id)
+      .order('timestamp', { ascending: true })
+
+    if (error) {
+      console.error('Failed to load messages:', error)
+      return []
+    }
+
+    return data || []
+  },
+  {
+    server: false,
+    watch: [authenticated]
+  }
+)
+
+const submitPassword = async () => {
+  if (!password.value || !sharedChat.value) return
+
+  isValidating.value = true
+  passwordError.value = ''
+
   try {
-    const { data, error: fetchError } = await $fetch(`/api/share/${route.params.id}`, {
+    // Validate password with server
+    const response = await $fetch('/api/validate-share-password', {
       method: 'POST',
       body: {
-        password: authenticated.value ? password.value : undefined
+        shareId: shareId,
+        password: password.value
       }
     })
 
-    if (fetchError) {
-      throw fetchError
-    }
-
-    if (data.requiresPassword && !authenticated.value) {
-      requiresPassword.value = true
-      loading.value = false
-      return
-    }
-
-    chatTitle.value = data.title
-    messages.value = data.messages
-    expiresAt.value = data.expiresAt ? new Date(data.expiresAt) : null
-    
-    authenticated.value = true
-    loading.value = false
-
-  } catch (err: any) {
-    console.error('Failed to load shared chat:', err)
-    
-    if (err.statusCode === 404) {
-      error.value = {
-        title: 'Chat Not Found',
-        message: 'This shared chat does not exist or has been removed.'
-      }
-    } else if (err.statusCode === 410) {
-      error.value = {
-        title: 'Chat Expired',
-        message: 'This shared chat has expired and is no longer available.'
-      }
+    if (response.valid) {
+      authenticated.value = true
+      await refreshCookie()
     } else {
-      error.value = {
-        title: 'Error Loading Chat',
-        message: 'Failed to load the shared chat. Please try again later.'
-      }
+      passwordError.value = 'Invalid password'
     }
-    
-    loading.value = false
+  } catch (error: any) {
+    passwordError.value = error.data?.message || 'Failed to validate password'
+  } finally {
+    isValidating.value = false
   }
 }
 
-// Verify password
-const verifyPassword = async () => {
-  if (!password.value) return
-  
-  passwordError.value = ''
-  
+const renderMarkdown = (content: string) => {
   try {
-    await loadSharedChat()
-    
-    if (!authenticated.value) {
-      passwordError.value = 'Incorrect password'
-    }
-  } catch (err) {
-    passwordError.value = 'Failed to verify password'
+    return marked(content, { breaks: true, gfm: true })
+  } catch (error) {
+    return content
   }
 }
 
-// Copy share link
-const copyShareLink = () => {
-  const url = window.location.href
-  navigator.clipboard.writeText(url)
-  toast('success', 'Copied', 'Share link copied to clipboard')
+const formatDate = (date: Date) => {
+  return new Intl.RelativeTimeFormat('en', { numeric: 'auto' }).format(
+    Math.ceil((date.getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
+    'day'
+  )
 }
 
-// Format expiration
-const formatExpiration = (date: Date) => {
-  const now = new Date()
-  const diff = date.getTime() - now.getTime()
-  
-  if (diff <= 0) return 'now'
-  
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
-  
-  if (hours < 1) return 'in less than an hour'
-  if (hours < 24) return `in ${hours} hour${hours > 1 ? 's' : ''}`
-  if (days < 7) return `in ${days} day${days > 1 ? 's' : ''}`
-  
-  return `on ${date.toLocaleDateString()}`
-}
-
-// Format time
-const formatTime = (date: Date) => {
-  return new Date(date).toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true
+const formatTimestamp = (date: Date) => {
+  return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { 
+    hour: '2-digit', 
+    minute: '2-digit' 
   })
 }
 
-// Load on mount
-onMounted(() => {
-  loadSharedChat()
-})
+const downloadChat = () => {
+  if (!sharedChat.value || !messages.value) return
 
-// Page meta
+  const chatData = {
+    title: sharedChat.value.title,
+    shared_at: sharedChat.value.created_at,
+    messages: messages.value.map(msg => ({
+      role: msg.role,
+      content: msg.content,
+      timestamp: msg.timestamp
+    }))
+  }
+
+  const blob = new Blob([JSON.stringify(chatData, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${sharedChat.value.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.json`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// SEO
 useHead({
-  title: computed(() => `${chatTitle.value || 'Shared Chat'} - CyberChat`),
+  title: sharedChat.value ? `${sharedChat.value.title} - Shared Chat` : 'Shared Chat',
   meta: [
-    { name: 'description', content: 'View a shared CyberChat conversation' },
+    { name: 'description', content: 'View shared conversation from CyberChat' },
     { name: 'robots', content: 'noindex, nofollow' }
   ]
 })
 </script>
 
 <style scoped>
-/* Loading spinner */
-.loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(57, 255, 20, 0.3);
-  border-top: 3px solid #39ff14;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
+.message-bubble.user {
+  @apply bg-dark-200/50 border-neon-green/30 ml-8;
 }
 
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+.message-bubble.assistant {
+  @apply bg-dark-100/50 border-neon-purple/30 mr-8;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .message-bubble.user,
+  .message-bubble.assistant {
+    @apply mx-2;
+  }
 }
 </style>

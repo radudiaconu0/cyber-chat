@@ -1,5 +1,5 @@
 import { createError, readBody } from 'h3'
-import { serverSupabaseUser } from '#supabase/server'
+import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
 
 export default defineEventHandler(async (event) => {
   // Get authenticated user
@@ -182,7 +182,7 @@ export default defineEventHandler(async (event) => {
             // Check for finish reason
             if (data.choices?.[0]?.finish_reason) {
               // Save message to database
-              const supabase = serverSupabaseClient(event)
+              const supabase = await serverSupabaseClient(event)
               
               // Get the complete message content
               const completeContent = data.choices?.[0]?.message?.content || ''

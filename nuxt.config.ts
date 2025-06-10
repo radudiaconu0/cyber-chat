@@ -1,4 +1,5 @@
 export default defineNuxtConfig({
+  ssr: false,
   compatibilityDate: '2025-06-10',
   devtools: { enabled: true },
   modules: [
@@ -57,9 +58,6 @@ export default defineNuxtConfig({
       wasm: true
     }
   },
-  
-  ssr: true,
-  
   vite: {
     optimizeDeps: {
       include: ['highlight.js', 'marked', 'uuid', 'dexie']

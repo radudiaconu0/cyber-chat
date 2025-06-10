@@ -1,290 +1,392 @@
+<!-- components/ModelSelector.vue -->
 <template>
-  <div class="relative">
+  <div class="relative" ref="dropdownRef">
+    <!-- Model Selector Button -->
     <button
-      @click="showModal = !showModal"
-      class="flex items-center space-x-2 px-4 py-2 bg-dark-200 rounded-lg hover:bg-dark-300 transition-colors border border-dark-300/50 hover:border-neon-green/50"
+      @click="toggleDropdown"
+      :disabled="mainStore.modelsLoading"
+      class="flex items-center space-x-2 px-3 py-2 bg-dark-200 border border-dark-300 rounded-lg hover:border-neon-green/50 transition-colors disabled:opacity-50"
     >
-      <CpuChipIcon class="w-5 h-5 text-neon-green" />
-      <span class="text-sm font-medium text-white">{{ currentModel?.name || 'Select Model' }}</span>
-      <ChevronDownIcon class="w-4 h-4 text-gray-400" />
+      <!-- Model Icon -->
+      <CpuChipIcon class="w-4 h-4 text-neon-green" />
+      
+      <!-- Current Model Display -->
+      <div class="flex flex-col items-start min-w-0">
+        <span class="text-white text-sm font-medium truncate max-w-32">
+          {{ currentModelDisplay.name }}
+        </span>
+        <span class="text-xs text-gray-400 truncate max-w-32">
+          {{ currentModelDisplay.category }}
+        </span>
+      </div>
+      
+      <!-- Loading/Dropdown Icon -->
+      <div class="flex-shrink-0">
+        <div v-if="mainStore.modelsLoading" class="w-4 h-4">
+          <div class="loading-spinner-small"></div>
+        </div>
+        <ChevronDownIcon 
+          v-else
+          :class="[
+            'w-4 h-4 text-gray-400 transition-transform',
+            showDropdown ? 'rotate-180' : ''
+          ]" 
+        />
+      </div>
     </button>
 
-    <!-- Model Selection Modal -->
-    <Transition name="modal">
+    <!-- Dropdown Menu -->
+    <Transition name="dropdown">
       <div 
-        v-if="showModal"
-        class="fixed inset-0 z-50 flex items-center justify-center p-4"
-        @click="showModal = false"
+        v-if="showDropdown && !mainStore.modelsLoading"
+        class="absolute top-full right-0 mt-2 w-80 bg-dark-200 border border-dark-300 rounded-lg shadow-xl z-50 max-h-96 overflow-hidden"
       >
-        <div class="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
-        
-        <div 
-          @click.stop
-          class="relative w-full max-w-3xl max-h-[80vh] overflow-hidden bg-dark-100 rounded-xl border border-neon-green/50 shadow-2xl"
-        >
-          <!-- Header -->
-          <div class="p-6 border-b border-dark-300/50">
-            <h2 class="text-2xl font-bold text-white mb-2">Select AI Model</h2>
-            <p class="text-gray-400">Choose the best model for your needs</p>
+        <!-- Search -->
+        <div class="p-3 border-b border-dark-300/50">
+          <div class="relative">
+            <MagnifyingGlassIcon class="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              v-model="searchQuery"
+              placeholder="Search models..."
+              class="w-full pl-10 pr-4 py-2 bg-dark-300 border border-dark-400 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-neon-green/50 text-sm"
+            />
           </div>
+        </div>
 
-          <!-- Search -->
-          <div class="p-4 border-b border-dark-300/50">
-            <div class="relative">
-              <MagnifyingGlassIcon class="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                v-model="searchQuery"
-                type="text"
-                placeholder="Search models..."
-                class="w-full pl-10 pr-4 py-2 bg-dark-200 border border-dark-300 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-neon-green/50"
+        <!-- Refresh Button -->
+        <div class="px-3 py-2 border-b border-dark-300/50 flex items-center justify-between">
+          <span class="text-xs text-gray-400">
+            {{ mainStore.availableModels.length }} models available
+          </span>
+          <button
+            @click="refreshModels"
+            :disabled="refreshing"
+            class="text-xs text-neon-green hover:text-neon-green/80 transition-colors disabled:opacity-50 flex items-center space-x-1"
+          >
+            <ArrowPathIcon 
+              :class="[
+                'w-3 h-3',
+                refreshing ? 'animate-spin' : ''
+              ]" 
+            />
+            <span>{{ refreshing ? 'Refreshing...' : 'Refresh' }}</span>
+          </button>
+        </div>
+
+        <!-- Model Categories -->
+        <div class="overflow-y-auto max-h-80">
+          <!-- Featured Models -->
+          <div v-if="featuredModels.length > 0 && !searchQuery" class="p-3">
+            <h3 class="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wider">Featured</h3>
+            <div class="space-y-1">
+              <ModelItem
+                v-for="model in featuredModels"
+                :key="model.id"
+                :model="model"
+                :is-selected="model.id === selectedModelId"
+                @select="selectModel"
               />
             </div>
           </div>
 
-          <!-- Filters -->
-          <div class="p-4 border-b border-dark-300/50">
-            <div class="flex items-center space-x-4">
-              <button
-                v-for="filter in filters"
-                :key="filter.id"
-                @click="toggleFilter(filter.id)"
-                :class="[
-                  'px-3 py-1.5 rounded-lg text-sm font-medium transition-all',
-                  activeFilters.includes(filter.id)
-                    ? 'bg-neon-green text-black'
-                    : 'bg-dark-200 text-gray-400 hover:text-white'
-                ]"
-              >
-                <component :is="filter.icon" class="w-4 h-4 inline mr-1" />
-                {{ filter.label }}
-              </button>
-            </div>
-          </div>
-
-          <!-- Models List -->
-          <div class="overflow-y-auto max-h-[50vh] p-4">
-            <div class="space-y-3">
-              <div
-                v-for="model in filteredModels"
+          <!-- All Models by Category -->
+          <div v-for="(models, category) in filteredModelsByCategory" :key="category" class="p-3">
+            <h3 class="text-xs font-semibold text-gray-400 mb-2 uppercase tracking-wider">
+              {{ formatCategoryName(category) }}
+            </h3>
+            <div class="space-y-1">
+              <ModelItem
+                v-for="model in models"
                 :key="model.id"
-                @click="selectModel(model)"
-                :class="[
-                  'p-4 rounded-lg cursor-pointer transition-all duration-200',
-                  'hover:bg-dark-200 hover:border-neon-green/30',
-                  model.id === mainStore.selectedModel
-                    ? 'bg-dark-200 border-2 border-neon-green'
-                    : 'bg-dark-100 border border-dark-300/50'
-                ]"
-              >
-                <div class="flex items-start justify-between mb-2">
-                  <div>
-                    <h3 class="text-lg font-semibold text-white">{{ model.name }}</h3>
-                    <p class="text-sm text-gray-500">{{ model.provider }}</p>
-                  </div>
-                  <div class="text-right">
-                    <div class="text-xs text-gray-400">Context: {{ formatTokens(model.contextLength) }}</div>
-                    <div class="text-xs text-gray-500">${{ model.inputPrice }}/${{ model.outputPrice }} per 1M</div>
-                  </div>
-                </div>
-
-                <p class="text-sm text-gray-400 mb-3">{{ model.description }}</p>
-
-                <!-- Capabilities -->
-                <div class="flex flex-wrap gap-2">
-                  <span
-                    v-for="capability in model.capabilities"
-                    :key="capability"
-                    class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium"
-                    :class="getCapabilityClass(capability)"
-                  >
-                    <component :is="getCapabilityIcon(capability)" class="w-3 h-3 mr-1" />
-                    {{ capability }}
-                  </span>
-                </div>
-
-                <!-- Special badges -->
-                <div class="mt-3 flex items-center space-x-2">
-                  <span v-if="model.reasoning" class="px-2 py-1 bg-purple-500/20 text-purple-400 rounded-full text-xs font-medium">
-                    <BeakerIcon class="w-3 h-3 inline mr-1" />
-                    Reasoning
-                  </span>
-                  <span v-if="model.vision" class="px-2 py-1 bg-blue-500/20 text-blue-400 rounded-full text-xs font-medium">
-                    <EyeIcon class="w-3 h-3 inline mr-1" />
-                    Vision
-                  </span>
-                  <span v-if="model.webSearch" class="px-2 py-1 bg-green-500/20 text-green-400 rounded-full text-xs font-medium flex items-center">
-                    <GlobeAltIcon class="w-3 h-3 mr-1" />
-                    Web Search
-                  </span>
-                </div>
-              </div>
+                :model="model"
+                :is-selected="model.id === selectedModelId"
+                @select="selectModel"
+              />
             </div>
           </div>
 
-          <!-- Footer -->
-          <div class="p-4 border-t border-dark-300/50 bg-dark-100/50">
-            <div class="flex items-center justify-between">
-              <p class="text-sm text-gray-400">
-                Selected: <span class="text-neon-green font-medium">{{ currentModel?.name }}</span>
-              </p>
-              <button
-                @click="showModal = false"
-                class="px-4 py-2 bg-dark-200 text-white rounded-lg hover:bg-dark-300 transition-colors"
-              >
-                Close
-              </button>
-            </div>
+          <!-- No Results -->
+          <div v-if="Object.keys(filteredModelsByCategory).length === 0" class="p-6 text-center">
+            <MagnifyingGlassIcon class="w-8 h-8 text-gray-600 mx-auto mb-2" />
+            <p class="text-gray-400 text-sm">No models found</p>
+            <p class="text-gray-500 text-xs mt-1">Try adjusting your search</p>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="p-3 border-t border-dark-300/50 bg-dark-100/50">
+          <div class="flex items-center justify-between text-xs text-gray-400">
+            <span>Last updated: {{ lastUpdatedText }}</span>
+            <a 
+              href="https://openrouter.ai" 
+              target="_blank" 
+              class="text-neon-green hover:text-neon-green/80 transition-colors"
+            >
+              Powered by OpenRouter
+            </a>
           </div>
         </div>
       </div>
     </Transition>
+
+    <!-- Error State -->
+    <div 
+      v-if="mainStore.modelsError && showDropdown"
+      class="absolute top-full right-0 mt-2 w-80 bg-dark-200 border border-red-500/50 rounded-lg shadow-xl z-50 p-4"
+    >
+      <div class="flex items-start space-x-3">
+        <ExclamationTriangleIcon class="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+        <div>
+          <p class="text-red-400 text-sm font-medium">Failed to load models</p>
+          <p class="text-gray-400 text-xs mt-1">{{ mainStore.modelsError }}</p>
+          <button
+            @click="retryLoadModels"
+            class="mt-2 text-xs text-neon-green hover:text-neon-green/80 transition-colors"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useMainStore } from '~/stores/main'
-import { 
+import {
   CpuChipIcon,
   ChevronDownIcon,
   MagnifyingGlassIcon,
-  BeakerIcon,
-  GlobeAltIcon,
-  EyeIcon,
-  CodeBracketIcon,
-  LanguageIcon,
-  DocumentTextIcon,
-  PhotoIcon,
-  MusicalNoteIcon,
-  ChartBarIcon
+  ArrowPathIcon,
+  ExclamationTriangleIcon
 } from '@heroicons/vue/24/outline'
 
+const props = defineProps<{
+  modelValue?: string
+}>()
+
+const emit = defineEmits<{
+  'update:modelValue': [value: string]
+}>()
+
 const mainStore = useMainStore()
-
-// State
-const showModal = ref(false)
+const dropdownRef = ref<HTMLElement>()
+const showDropdown = ref(false)
 const searchQuery = ref('')
-const activeFilters = ref<string[]>([])
+const refreshing = ref(false)
 
-// Filters configuration
-const filters = [
-  { id: 'reasoning', label: 'Reasoning', icon: BeakerIcon },
-  { id: 'vision', label: 'Vision', icon: EyeIcon },
-  { id: 'webSearch', label: 'Web Search', icon: GlobeAltIcon },
-  { id: 'code', label: 'Code', icon: CodeBracketIcon }
-]
-
-// Computed
-const currentModel = computed(() => mainStore.currentModel)
-
-const filteredModels = computed(() => {
-  let models = mainStore.availableModels
-
-  // Apply search filter
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase()
-    models = models.filter(model => 
-      model.name.toLowerCase().includes(query) ||
-      model.provider.toLowerCase().includes(query) ||
-      model.description.toLowerCase().includes(query)
-    )
-  }
-
-  // Apply capability filters
-  if (activeFilters.value.length > 0) {
-    models = models.filter(model => {
-      return activeFilters.value.every(filter => {
-        if (filter === 'reasoning') return model.reasoning
-        if (filter === 'vision') return model.vision
-        if (filter === 'webSearch') return model.webSearch
-        if (filter === 'code') return model.capabilities.includes('code')
-        return true
-      })
-    })
-  }
-
-  return models
+// Initialize models on mount
+onMounted(async () => {
+  await mainStore.initializeModels()
+  document.addEventListener('click', handleClickOutside)
 })
 
-// Methods
-const selectModel = (model: any) => {
-  mainStore.setModel(model.id)
-  showModal.value = false
-}
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
 
-const toggleFilter = (filterId: string) => {
-  const index = activeFilters.value.indexOf(filterId)
-  if (index > -1) {
-    activeFilters.value.splice(index, 1)
-  } else {
-    activeFilters.value.push(filterId)
-  }
-}
+const selectedModelId = computed(() => {
+  return props.modelValue || mainStore.currentChat?.model || mainStore.chatSettings.defaultModel
+})
 
-const formatTokens = (tokens: number) => {
-  if (tokens < 1000) return tokens.toString()
-  if (tokens < 1000000) return `${(tokens / 1000).toFixed(0)}K`
-  return `${(tokens / 1000000).toFixed(1)}M`
-}
-
-const getCapabilityIcon = (capability: string) => {
-  const icons: Record<string, any> = {
-    'text': DocumentTextIcon,
-    'code': CodeBracketIcon,
-    'vision': EyeIcon,
-    'images': PhotoIcon,
-    'web': GlobeAltIcon,
-    'reasoning': BeakerIcon,
-    'multilingual': LanguageIcon,
-    'audio': MusicalNoteIcon,
-    'analysis': ChartBarIcon
-  }
-  return icons[capability] || DocumentTextIcon
-}
-
-const getCapabilityClass = (capability: string) => {
-  const classes: Record<string, string> = {
-    'text': 'bg-gray-500/20 text-gray-400',
-    'code': 'bg-blue-500/20 text-blue-400',
-    'vision': 'bg-purple-500/20 text-purple-400',
-    'images': 'bg-pink-500/20 text-pink-400',
-    'web': 'bg-green-500/20 text-green-400',
-    'reasoning': 'bg-yellow-500/20 text-yellow-400',
-    'multilingual': 'bg-indigo-500/20 text-indigo-400',
-    'audio': 'bg-orange-500/20 text-orange-400',
-    'analysis': 'bg-cyan-500/20 text-cyan-400'
-  }
-  return classes[capability] || 'bg-gray-500/20 text-gray-400'
-}
-
-// Close modal on escape
-onMounted(() => {
-  const handleEscape = (e: KeyboardEvent) => {
-    if (e.key === 'Escape' && showModal.value) {
-      showModal.value = false
+const currentModelDisplay = computed(() => {
+  const model = mainStore.getModelById(selectedModelId.value)
+  if (model) {
+    return {
+      name: model.name,
+      category: model.category
     }
   }
-  window.addEventListener('keydown', handleEscape)
+  return {
+    name: selectedModelId.value.split('/').pop() || 'Unknown Model',
+    category: 'unknown'
+  }
+})
+
+const featuredModels = computed(() => {
+  if (searchQuery.value) return []
+  return mainStore.featuredModels.slice(0, 5) // Show top 5 featured
+})
+
+const filteredModelsByCategory = computed(() => {
+  let models = mainStore.availableModels
   
-  onUnmounted(() => {
-    window.removeEventListener('keydown', handleEscape)
-  })
+  if (searchQuery.value) {
+    models = mainStore.searchModels(searchQuery.value)
+  }
+  
+  // Group by category, excluding featured if showing featured section
+  const filtered = models.filter(model => 
+    searchQuery.value || !model.featured
+  )
+  
+  return filtered.reduce((acc, model) => {
+    if (!acc[model.category]) acc[model.category] = []
+    acc[model.category].push(model)
+    return acc
+  }, {} as Record<string, any[]>)
+})
+
+const lastUpdatedText = computed(() => {
+  if (!mainStore.modelsLastFetched) return 'Never'
+  const diff = Date.now() - mainStore.modelsLastFetched.getTime()
+  const hours = Math.floor(diff / (1000 * 60 * 60))
+  if (hours < 1) return 'Just now'
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
+})
+
+const toggleDropdown = () => {
+  showDropdown.value = !showDropdown.value
+  if (showDropdown.value) {
+    searchQuery.value = ''
+  }
+}
+
+const selectModel = (modelId: string) => {
+  emit('update:modelValue', modelId)
+  
+  // Update current chat model if we're in a chat
+  if (mainStore.currentChat) {
+    mainStore.updateChatSession(mainStore.currentChat.id, { model: modelId })
+  }
+  
+  // Update default model in settings
+  mainStore.updateChatSettings({ defaultModel: modelId })
+  
+  showDropdown.value = false
+}
+
+const refreshModels = async () => {
+  refreshing.value = true
+  try {
+    await mainStore.refreshModels()
+  } finally {
+    refreshing.value = false
+  }
+}
+
+const retryLoadModels = async () => {
+  await mainStore.fetchModels(true)
+}
+
+const formatCategoryName = (category: string) => {
+  return category.replace(/[-_]/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+}
+
+const handleClickOutside = (event: Event) => {
+  if (dropdownRef.value && !dropdownRef.value.contains(event.target as Node)) {
+    showDropdown.value = false
+  }
+}
+</script>
+
+<script lang="ts">
+// ModelItem component definition
+export const ModelItem = defineComponent({
+  props: {
+    model: {
+      type: Object as PropType<any>,
+      required: true
+    },
+    isSelected: {
+      type: Boolean,
+      default: false
+    }
+  },
+  emits: ['select'],
+  template: `
+    <button
+      @click="$emit('select', model.id)"
+      :class="[
+        'w-full text-left p-2 rounded-lg transition-colors group',
+        isSelected 
+          ? 'bg-neon-green/20 border border-neon-green/50' 
+          : 'hover:bg-dark-300 border border-transparent'
+      ]"
+    >
+      <div class="flex items-start justify-between">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center space-x-2">
+            <h4 :class="[
+              'font-medium text-sm truncate',
+              isSelected ? 'text-neon-green' : 'text-white group-hover:text-white'
+            ]">
+              {{ model.name }}
+            </h4>
+            <div v-if="model.featured" class="flex-shrink-0">
+              <span class="px-1.5 py-0.5 bg-neon-green/20 text-neon-green text-xs rounded font-medium">
+                Featured
+              </span>
+            </div>
+          </div>
+          <p class="text-gray-400 text-xs mt-1 line-clamp-2">
+            {{ model.description }}
+          </p>
+          <div class="flex items-center space-x-3 mt-2">
+            <span class="text-xs text-gray-500">
+              {{ formatNumber(model.contextLength) }} ctx
+            </span>
+            <span class="text-xs text-gray-500">
+              Hello
+            </span>
+          </div>
+          <div class="flex flex-wrap gap-1 mt-2">
+            <span
+              v-for="capability in model.capabilities.slice(0, 3)"
+              :key="capability"
+              class="px-1.5 py-0.5 bg-dark-100 text-gray-400 text-xs rounded"
+            >
+              {{ capability }}
+            </span>
+            <span
+              v-if="model.capabilities.length > 3"
+              class="px-1.5 py-0.5 bg-dark-100 text-gray-400 text-xs rounded"
+            >
+              +{{ model.capabilities.length - 3 }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </button>
+  `,
+  setup() {
+    const formatNumber = (num: number) => {
+      if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
+      if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
+      return num.toString()
+    }
+
+    return {
+      formatNumber
+    }
+  }
 })
 </script>
 
 <style scoped>
-/* Modal transitions */
-.modal-enter-active,
-.modal-leave-active {
-  transition: all 0.3s ease;
+.dropdown-enter-active,
+.dropdown-leave-active {
+  transition: all 0.2s ease;
 }
 
-.modal-enter-from,
-.modal-leave-to {
+.dropdown-enter-from {
   opacity: 0;
+  transform: translateY(-10px) scale(0.95);
 }
 
-.modal-enter-from > div:last-child,
-.modal-leave-to > div:last-child {
-  transform: scale(0.9) translateY(20px);
+.dropdown-leave-to {
+  opacity: 0;
+  transform: translateY(-10px) scale(0.95);
+}
+
+.loading-spinner-small {
+  @apply w-4 h-4 border-2 border-gray-600 border-t-neon-green rounded-full animate-spin;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 </style>
